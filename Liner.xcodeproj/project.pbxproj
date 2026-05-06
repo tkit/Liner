@@ -12,7 +12,18 @@
 		4F0000082DCA123400000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4F0000042DCA123400000001 /* Assets.xcassets */; };
 		4F0000152DCA567800000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4F0000162DCA567800000001 /* Localizable.xcstrings */; };
 		4F0000172DCA567800000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4F0000182DCA567800000001 /* InfoPlist.xcstrings */; };
+		4F0000292DCA999900000001 /* LinerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000282DCA999900000001 /* LinerTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4F0000262DCA999900000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4F00000E2DCA123400000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4F00000A2DCA123400000001;
+			remoteInfo = Liner;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		4F0000022DCA123400000001 /* LinerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinerApp.swift; sourceTree = "<group>"; };
@@ -21,10 +32,19 @@
 		4F0000052DCA123400000001 /* Liner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Liner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F0000162DCA567800000001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		4F0000182DCA567800000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		4F0000232DCA999900000001 /* LinerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LinerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4F0000282DCA999900000001 /* LinerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		4F00000C2DCA123400000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4F0000252DCA999900000001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -38,6 +58,7 @@
 			isa = PBXGroup;
 			children = (
 				4F0000012DCA123400000001 /* Liner */,
+				4F0000272DCA999900000001 /* LinerTests */,
 				4F0000092DCA123400000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -58,8 +79,17 @@
 			isa = PBXGroup;
 			children = (
 				4F0000052DCA123400000001 /* Liner.app */,
+				4F0000232DCA999900000001 /* LinerTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		4F0000272DCA999900000001 /* LinerTests */ = {
+			isa = PBXGroup;
+			children = (
+				4F0000282DCA999900000001 /* LinerTests.swift */,
+			);
+			path = LinerTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -82,6 +112,23 @@
 			productReference = 4F0000052DCA123400000001 /* Liner.app */;
 			productType = "com.apple.product-type.application";
 		};
+		4F0000222DCA999900000001 /* LinerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4F00002A2DCA999900000001 /* Build configuration list for PBXNativeTarget "LinerTests" */;
+			buildPhases = (
+				4F0000242DCA999900000001 /* Sources */,
+				4F0000252DCA999900000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4F0000272DCA999900000002 /* PBXTargetDependency */,
+			);
+			name = LinerTests;
+			productName = LinerTests;
+			productReference = 4F0000232DCA999900000001 /* LinerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -94,6 +141,10 @@
 				TargetAttributes = {
 					4F00000A2DCA123400000001 = {
 						CreatedOnToolsVersion = 26.4.1;
+					};
+					4F0000222DCA999900000001 = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = 4F00000A2DCA123400000001;
 					};
 				};
 			};
@@ -112,6 +163,7 @@
 			projectRoot = "";
 			targets = (
 				4F00000A2DCA123400000001 /* Liner */,
+				4F0000222DCA999900000001 /* LinerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -139,7 +191,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4F0000242DCA999900000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F0000292DCA999900000001 /* LinerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4F0000272DCA999900000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4F00000A2DCA123400000001 /* Liner */;
+			targetProxy = 4F0000262DCA999900000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4F0000102DCA123400000001 /* Debug */ = {
@@ -316,6 +384,46 @@
 			};
 			name = Release;
 		};
+		4F00002B2DCA999900000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.tkit.linerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Liner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Liner";
+			};
+			name = Debug;
+		};
+		4F00002C2DCA999900000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.tkit.linerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Liner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Liner";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -333,6 +441,15 @@
 			buildConfigurations = (
 				4F0000132DCA123400000001 /* Debug */,
 				4F0000142DCA123400000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4F00002A2DCA999900000001 /* Build configuration list for PBXNativeTarget "LinerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4F00002B2DCA999900000001 /* Debug */,
+				4F00002C2DCA999900000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
