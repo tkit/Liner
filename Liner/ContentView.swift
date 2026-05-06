@@ -176,7 +176,7 @@ private struct InspectorPlaceholder: View {
 }
 
 private struct InspectorField: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
 
     var body: some View {
@@ -199,7 +199,7 @@ private enum SidebarItem: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    var title: String {
+    var title: LocalizedStringKey {
         switch self {
         case .library:
             "Library"
@@ -229,10 +229,10 @@ private struct PlaceholderTrack: Identifiable {
     let title: String
     let artist: String
     let album: String
-    let statusTitle: String
+    let statusTitle: LocalizedStringKey
     let statusSystemImage: String
 
-    static let samples = [
+    @MainActor static let samples = [
         PlaceholderTrack(
             fileName: "01 - Northern Line.mp3",
             trackNumber: "01",

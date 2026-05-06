@@ -67,6 +67,12 @@ Xcode プロジェクト、Swift Package、アプリ本体の実装はまだ作�
 - [公開・配布方針](docs/distribution-plan.md)
 - [テスト用音源 fixture 方針](docs/test-fixtures.md)
 
+## Localization
+
+UI 文言は英語を source language とし、`Liner/Localizable.xcstrings` に `en` / `ja` の翻訳を追加します。SwiftUI では表示文言を `Text("Save Tags")`、`Label("Open", systemImage: "folder")`、`TableColumn("File")` のように文字列リテラルで渡し、変数経由で表示する UI 文言は `LocalizedStringKey` として保持してください。アプリ名など Info.plist 由来の文言は `Liner/InfoPlist.xcstrings` に追加します。
+
+表示確認は Xcode の Scheme > Run > Options > App Language で English / Japanese を切り替えるか、CLI で `xcodebuild -scheme Liner -destination 'platform=macOS' build` を実行して localization resource がビルドに含まれることを確認します。
+
 ## ライセンス
 
 MIT License
