@@ -1,33 +1,39 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var selectedSidebarItem: SidebarItem? = .library
-    @State private var selectedTrackID: PlaceholderTrack.ID?
+    @State private var importedItems: [ImportedItem] = []
+    @State private var selectedItemID: ImportedItem.ID?
     @State private var searchText = ""
     @State private var isInspectorPresented = true
+    @State private var isFileImporterPresented = false
 
     var body: some View {
         NavigationSplitView {
             SidebarView(selection: $selectedSidebarItem)
         } detail: {
-            TrackTablePlaceholder(
-                tracks: filteredTracks,
-                selectedTrackID: $selectedTrackID
+            ImportedItemTable(
+                items: filteredItems,
+                selectedItemID: $selectedItemID,
+                importAction: openFileImporter
             )
             .inspector(isPresented: $isInspectorPresented) {
-                InspectorPlaceholder(track: selectedTrack)
+                InspectorPlaceholder(item: selectedItem)
             }
         }
         .navigationTitle("Liner")
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Filter tracks")
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Filter files")
         .toolbar {
             ToolbarItemGroup {
                 Button {
+                    openFileImporter()
                 } label: {
                     Label("Open", systemImage: "folder")
                 }
 
                 Button {
+                    openFileImporter()
                 } label: {
                     Label("Add Files", systemImage: "plus")
                 }
@@ -55,22 +61,93 @@ struct ContentView: View {
                 }
             }
         }
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: [.mp3, .folder],
+            allowsMultipleSelection: true
+        ) { result in
+            handleImportedURLs(result)
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            addImportedURLs(urls)
+            return !urls.isEmpty
+        }
         .frame(minWidth: 920, minHeight: 560)
     }
 
-    private var filteredTracks: [PlaceholderTrack] {
-        guard !searchText.isEmpty else { return PlaceholderTrack.samples }
+    private var filteredItems: [ImportedItem] {
+        guard !searchText.isEmpty else { return importedItems }
 
-        return PlaceholderTrack.samples.filter { track in
-            track.fileName.localizedStandardContains(searchText)
-                || track.title.localizedStandardContains(searchText)
-                || track.artist.localizedStandardContains(searchText)
-                || track.album.localizedStandardContains(searchText)
+        return importedItems.filter { item in
+            item.displayName.localizedStandardContains(searchText)
+                || item.statusTitle.localizedStandardContains(searchText)
+                || item.url.path.localizedStandardContains(searchText)
         }
     }
 
-    private var selectedTrack: PlaceholderTrack? {
-        PlaceholderTrack.samples.first { $0.id == selectedTrackID }
+    private var selectedItem: ImportedItem? {
+        importedItems.first { $0.id == selectedItemID }
+    }
+
+    private func openFileImporter() {
+        isFileImporterPresented = true
+    }
+
+    private func handleImportedURLs(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+        addImportedURLs(urls)
+    }
+
+    private func addImportedURLs(_ urls: [URL]) {
+        var knownURLs = Set(importedItems.map(\.url))
+        let newItems = urls
+            .flatMap(importableMP3URLs)
+            .filter { knownURLs.insert($0).inserted }
+            .map(ImportedItem.init)
+
+        guard !newItems.isEmpty else { return }
+
+        importedItems.append(contentsOf: newItems)
+        selectedItemID = newItems.last?.id
+    }
+
+    private func importableMP3URLs(from url: URL) -> [URL] {
+        let canAccessScopedResource = url.startAccessingSecurityScopedResource()
+        defer {
+            if canAccessScopedResource {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let standardizedURL = url.standardizedFileURL
+
+        if standardizedURL.isDirectory {
+            return mp3Files(in: standardizedURL)
+        }
+
+        return standardizedURL.isSupportedMP3 ? [standardizedURL] : []
+    }
+
+    private func mp3Files(in folderURL: URL) -> [URL] {
+        let resourceKeys: [URLResourceKey] = [.isRegularFileKey]
+        let options: FileManager.DirectoryEnumerationOptions = [
+            .skipsHiddenFiles,
+            .skipsPackageDescendants
+        ]
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: folderURL,
+            includingPropertiesForKeys: resourceKeys,
+            options: options
+        ) else {
+            return []
+        }
+
+        return enumerator
+            .compactMap { $0 as? URL }
+            .map(\.standardizedFileURL)
+            .filter { $0.isRegularFile && $0.isSupportedMP3 }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 }
 
@@ -87,54 +164,51 @@ private struct SidebarView: View {
     }
 }
 
-private struct TrackTablePlaceholder: View {
-    let tracks: [PlaceholderTrack]
-    @Binding var selectedTrackID: PlaceholderTrack.ID?
+private struct ImportedItemTable: View {
+    let items: [ImportedItem]
+    @Binding var selectedItemID: ImportedItem.ID?
+    let importAction: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            Table(tracks, selection: $selectedTrackID) {
-                TableColumn("File") { track in
-                    Text(track.fileName)
+            if items.isEmpty {
+                ContentUnavailableView {
+                    Label("No Files Loaded", systemImage: "tray.and.arrow.down")
+                } description: {
+                    Text("Open MP3 files or folders, or drag them here from Finder.")
+                } actions: {
+                    Button(action: importAction) {
+                        Label("Open MP3 Files or Folders", systemImage: "folder.badge.plus")
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(items, selection: $selectedItemID) {
+                    TableColumn("File") { item in
+                        Label(item.displayName, systemImage: item.systemImage)
+                    }
 
-                TableColumn("Track") { track in
-                    Text(track.trackNumber)
-                        .monospacedDigit()
+                    TableColumn("Status") { item in
+                        Label(item.statusTitle, systemImage: "checkmark.circle")
+                            .foregroundStyle(.secondary)
+                    }
                 }
-
-                TableColumn("Title") { track in
-                    Text(track.title)
-                }
-
-                TableColumn("Artist") { track in
-                    Text(track.artist)
-                }
-
-                TableColumn("Album") { track in
-                    Text(track.album)
-                }
-
-                TableColumn("Status") { track in
-                    Label(track.statusTitle, systemImage: track.statusSystemImage)
-                        .foregroundStyle(.secondary)
-                }
+                .tableStyle(.bordered(alternatesRowBackgrounds: true))
             }
-            .tableStyle(.bordered(alternatesRowBackgrounds: true))
 
-            TableFooterPlaceholder(trackCount: tracks.count)
+            ImportedItemFooter(itemCount: items.count)
         }
     }
 }
 
-private struct TableFooterPlaceholder: View {
-    let trackCount: Int
+private struct ImportedItemFooter: View {
+    let itemCount: Int
 
     var body: some View {
         HStack {
-            Label("\(trackCount) placeholder tracks", systemImage: "music.note.list")
+            Label("\(itemCount) MP3 files loaded", systemImage: "music.note.list")
             Spacer()
-            Text("No tag reading or writing is active yet.")
+            Text("Folders are expanded to supported MP3 files.")
         }
         .font(.callout)
         .foregroundStyle(.secondary)
@@ -145,7 +219,7 @@ private struct TableFooterPlaceholder: View {
 }
 
 private struct InspectorPlaceholder: View {
-    let track: PlaceholderTrack?
+    let item: ImportedItem?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -154,17 +228,16 @@ private struct InspectorPlaceholder: View {
 
             Divider()
 
-            if let track {
-                InspectorField(label: "File", value: track.fileName)
-                InspectorField(label: "Title", value: track.title)
-                InspectorField(label: "Artist", value: track.artist)
-                InspectorField(label: "Album", value: track.album)
-                InspectorField(label: "Track", value: track.trackNumber)
+            if let item {
+                InspectorField(label: "File", value: item.displayName)
+                InspectorField(label: "Status", value: item.statusTitle)
+                InspectorField(label: "URL", value: item.url.absoluteString)
+                InspectorField(label: "Path", value: item.url.path)
             } else {
                 ContentUnavailableView(
                     "No Selection",
-                    systemImage: "music.note",
-                    description: Text("Select a row to preview where tag details will appear.")
+                    systemImage: "doc",
+                    description: Text("Select a loaded URL to inspect its details.")
                 )
             }
 
@@ -189,6 +262,36 @@ private struct InspectorField: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct ImportedItem: Identifiable, Hashable {
+    let url: URL
+
+    var id: URL { url }
+
+    let statusTitle = "Loaded"
+
+    var displayName: String {
+        url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+    }
+
+    var systemImage: String {
+        "music.note"
+    }
+}
+
+private extension URL {
+    var isDirectory: Bool {
+        (try? resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+
+    var isRegularFile: Bool {
+        (try? resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+    }
+
+    var isSupportedMP3: Bool {
+        pathExtension.localizedCaseInsensitiveCompare("mp3") == .orderedSame
     }
 }
 
@@ -220,47 +323,6 @@ private enum SidebarItem: String, CaseIterable, Identifiable {
             "square.and.pencil"
         }
     }
-}
-
-private struct PlaceholderTrack: Identifiable {
-    let id = UUID()
-    let fileName: String
-    let trackNumber: String
-    let title: String
-    let artist: String
-    let album: String
-    let statusTitle: LocalizedStringKey
-    let statusSystemImage: String
-
-    @MainActor static let samples = [
-        PlaceholderTrack(
-            fileName: "01 - Northern Line.mp3",
-            trackNumber: "01",
-            title: "Northern Line",
-            artist: "Sample Artist",
-            album: "Draft Album",
-            statusTitle: "Unloaded",
-            statusSystemImage: "circle"
-        ),
-        PlaceholderTrack(
-            fileName: "02 - Window Seat.mp3",
-            trackNumber: "02",
-            title: "Window Seat",
-            artist: "Sample Artist",
-            album: "Draft Album",
-            statusTitle: "Unloaded",
-            statusSystemImage: "circle"
-        ),
-        PlaceholderTrack(
-            fileName: "03 - Last Train Home.mp3",
-            trackNumber: "03",
-            title: "Last Train Home",
-            artist: "Sample Artist",
-            album: "Draft Album",
-            statusTitle: "Unloaded",
-            statusSystemImage: "circle"
-        )
-    ]
 }
 
 #Preview {
