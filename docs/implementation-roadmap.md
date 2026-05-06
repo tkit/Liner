@@ -13,6 +13,8 @@
 
 MP3 / ID3v2 の読み書き技術調査は [タグ読み書き技術調査](tagging-research.md) にまとめています。MVP では `ID3TagEditor` を第一候補として採用し、将来 `TagLib` へ切り替えられる薄いタグ処理境界を置く方針です。
 
+テスト用音源 fixture は [テスト用音源 fixture 方針](test-fixtures.md) にまとめています。外部楽曲素材は使わず、`scripts/generate-audio-fixtures.sh` で生成する短い合成音 MP3 を採用します。
+
 ### 開発環境と最低対応 OS
 
 初期実装では以下を基準にします。

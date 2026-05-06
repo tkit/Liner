@@ -65,6 +65,7 @@ Xcode プロジェクト、Swift Package、アプリ本体の実装はまだ作�
 - [プロダクトコンセプト](docs/product-concept.md)
 - [実装ロードマップ](docs/implementation-roadmap.md)
 - [公開・配布方針](docs/distribution-plan.md)
+- [テスト用音源 fixture 方針](docs/test-fixtures.md)
 
 ## ライセンス
 
