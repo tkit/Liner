@@ -21,6 +21,7 @@
 		4F0000052DCA123400000001 /* Liner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Liner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F0000162DCA567800000001 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		4F0000182DCA567800000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		4F0000192DCC000100000001 /* Liner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Liner.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +48,7 @@
 			children = (
 				4F0000022DCA123400000001 /* LinerApp.swift */,
 				4F0000032DCA123400000001 /* ContentView.swift */,
+				4F0000192DCC000100000001 /* Liner.entitlements */,
 				4F0000162DCA567800000001 /* Localizable.xcstrings */,
 				4F0000182DCA567800000001 /* InfoPlist.xcstrings */,
 				4F0000042DCA123400000001 /* Assets.xcassets */,
@@ -262,6 +264,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Liner/Liner.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -291,6 +294,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Liner/Liner.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
