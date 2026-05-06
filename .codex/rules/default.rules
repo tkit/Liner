@@ -1,0 +1,6 @@
+prefix_rule(pattern = ["xcodebuild"], decision = "allow")
+prefix_rule(pattern = ["xcodebuild", "-runFirstLaunch"], decision = "allow")
+
+prefix_rule(pattern = ["swiftc"], decision = "allow")
+
+prefix_rule(pattern = ["/usr/libexec/PlistBuddy"], decision = "allow")
