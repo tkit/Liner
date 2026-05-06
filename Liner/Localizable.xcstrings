@@ -1,7 +1,11 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld MP3 files loaded" : {
+
+    },
     "%lld placeholder tracks" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -34,6 +38,7 @@
       }
     },
     "Album" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -50,6 +55,7 @@
       }
     },
     "Artist" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -82,6 +88,7 @@
       }
     },
     "Filter tracks" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -96,6 +103,9 @@
           }
         }
       }
+    },
+    "Filter files" : {
+
     },
     "Folders" : {
       "localizations" : {
@@ -161,6 +171,9 @@
         }
       }
     },
+    "No Files Loaded" : {
+
+    },
     "No Selection" : {
       "localizations" : {
         "en" : {
@@ -178,6 +191,7 @@
       }
     },
     "No tag reading or writing is active yet." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -208,6 +222,12 @@
           }
         }
       }
+    },
+    "Folders are expanded to supported MP3 files." : {
+
+    },
+    "Path" : {
+
     },
     "Pending Changes" : {
       "localizations" : {
@@ -257,7 +277,17 @@
         }
       }
     },
+    "Open MP3 Files or Folders" : {
+
+    },
+    "Open MP3 files or folders, or drag them here from Finder." : {
+
+    },
+    "Select a loaded URL to inspect its details." : {
+
+    },
     "Select a row to preview where tag details will appear." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -290,6 +320,7 @@
       }
     },
     "Title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -306,6 +337,7 @@
       }
     },
     "Track" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -322,6 +354,7 @@
       }
     },
     "Unloaded" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -336,6 +369,9 @@
           }
         }
       }
+    },
+    "URL" : {
+
     }
   },
   "version" : "1.0"
