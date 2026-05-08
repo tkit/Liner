@@ -103,7 +103,7 @@ struct ContentView: View {
         let newItems = urls
             .flatMap(importableMP3URLs)
             .filter { knownURLs.insert($0).inserted }
-            .map(ImportedItem.init)
+            .map { ImportedItem(url: $0) }
 
         guard !newItems.isEmpty else { return }
 
@@ -267,10 +267,26 @@ private struct InspectorField: View {
 
 private struct ImportedItem: Identifiable, Hashable {
     let url: URL
+    var metadataState: EditableTrackMetadata
 
     var id: URL { url }
 
-    let statusTitle = "Loaded"
+    static func == (lhs: ImportedItem, rhs: ImportedItem) -> Bool {
+        lhs.url == rhs.url
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+    }
+
+    init(url: URL, metadataState: EditableTrackMetadata = EditableTrackMetadata(original: TrackMetadata())) {
+        self.url = url
+        self.metadataState = metadataState
+    }
+
+    var statusTitle: String {
+        metadataState.hasChanges ? "Modified" : "Loaded"
+    }
 
     var displayName: String {
         url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent

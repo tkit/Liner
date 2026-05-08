@@ -13,6 +13,7 @@
 		4F0000152DCA567800000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4F0000162DCA567800000001 /* Localizable.xcstrings */; };
 		4F0000172DCA567800000001 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4F0000182DCA567800000001 /* InfoPlist.xcstrings */; };
 		4F0000292DCA999900000001 /* LinerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0000282DCA999900000001 /* LinerTests.swift */; };
+		4F00002E2DD0000000000001 /* TrackMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F00002D2DD0000000000001 /* TrackMetadata.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,6 +36,7 @@
 		4F0000192DCC000100000001 /* Liner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Liner.entitlements; sourceTree = "<group>"; };
 		4F0000232DCA999900000001 /* LinerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LinerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4F0000282DCA999900000001 /* LinerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinerTests.swift; sourceTree = "<group>"; };
+		4F00002D2DD0000000000001 /* TrackMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackMetadata.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +71,7 @@
 			children = (
 				4F0000022DCA123400000001 /* LinerApp.swift */,
 				4F0000032DCA123400000001 /* ContentView.swift */,
+				4F00002D2DD0000000000001 /* TrackMetadata.swift */,
 				4F0000192DCC000100000001 /* Liner.entitlements */,
 				4F0000162DCA567800000001 /* Localizable.xcstrings */,
 				4F0000182DCA567800000001 /* InfoPlist.xcstrings */,
@@ -190,6 +193,7 @@
 			files = (
 				4F0000062DCA123400000001 /* LinerApp.swift in Sources */,
 				4F0000072DCA123400000001 /* ContentView.swift in Sources */,
+				4F00002E2DD0000000000001 /* TrackMetadata.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
