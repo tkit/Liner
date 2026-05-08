@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isInspectorPresented = true
     @State private var isFileImporterPresented = false
+    @State private var lastImportSkippedItems: [MP3ImportSkippedItem] = []
 
     var body: some View {
         NavigationSplitView {
@@ -15,8 +16,10 @@ struct ContentView: View {
         } detail: {
             ImportedItemTable(
                 items: filteredItems,
+                skippedItems: lastImportSkippedItems,
                 selectedItemID: $selectedItemID,
-                importAction: openFileImporter
+                importAction: openFileImporter,
+                dismissSkippedItemsAction: { lastImportSkippedItems = [] }
             )
             .inspector(isPresented: $isInspectorPresented) {
                 InspectorPlaceholder(item: selectedItem)
@@ -99,55 +102,18 @@ struct ContentView: View {
     }
 
     private func addImportedURLs(_ urls: [URL]) {
-        var knownURLs = Set(importedItems.map(\.url))
-        let newItems = urls
-            .flatMap(importableMP3URLs)
-            .filter { knownURLs.insert($0).inserted }
-            .map { ImportedItem(url: $0) }
+        let scanResult = MP3ImportScanner().scan(
+            urls: urls,
+            existingURLs: Set(importedItems.map(\.url))
+        )
+        let newItems = scanResult.acceptedURLs.map { ImportedItem(url: $0) }
+
+        lastImportSkippedItems = scanResult.skippedItems
 
         guard !newItems.isEmpty else { return }
 
         importedItems.append(contentsOf: newItems)
         selectedItemID = newItems.last?.id
-    }
-
-    private func importableMP3URLs(from url: URL) -> [URL] {
-        let canAccessScopedResource = url.startAccessingSecurityScopedResource()
-        defer {
-            if canAccessScopedResource {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        let standardizedURL = url.standardizedFileURL
-
-        if standardizedURL.isDirectory {
-            return mp3Files(in: standardizedURL)
-        }
-
-        return standardizedURL.isSupportedMP3 ? [standardizedURL] : []
-    }
-
-    private func mp3Files(in folderURL: URL) -> [URL] {
-        let resourceKeys: [URLResourceKey] = [.isRegularFileKey]
-        let options: FileManager.DirectoryEnumerationOptions = [
-            .skipsHiddenFiles,
-            .skipsPackageDescendants
-        ]
-
-        guard let enumerator = FileManager.default.enumerator(
-            at: folderURL,
-            includingPropertiesForKeys: resourceKeys,
-            options: options
-        ) else {
-            return []
-        }
-
-        return enumerator
-            .compactMap { $0 as? URL }
-            .map(\.standardizedFileURL)
-            .filter { $0.isRegularFile && $0.isSupportedMP3 }
-            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 }
 
@@ -166,11 +132,20 @@ private struct SidebarView: View {
 
 private struct ImportedItemTable: View {
     let items: [ImportedItem]
+    let skippedItems: [MP3ImportSkippedItem]
     @Binding var selectedItemID: ImportedItem.ID?
     let importAction: () -> Void
+    let dismissSkippedItemsAction: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
+            if !skippedItems.isEmpty {
+                ImportSkippedBanner(
+                    skippedItems: skippedItems,
+                    dismissAction: dismissSkippedItemsAction
+                )
+            }
+
             if items.isEmpty {
                 ContentUnavailableView {
                     Label("No Files Loaded", systemImage: "tray.and.arrow.down")
@@ -197,6 +172,52 @@ private struct ImportedItemTable: View {
             }
 
             ImportedItemFooter(itemCount: items.count)
+        }
+    }
+}
+
+private struct ImportSkippedBanner: View {
+    let skippedItems: [MP3ImportSkippedItem]
+    let dismissAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(skippedItems.count) files skipped")
+                    .font(.callout.weight(.semibold))
+                Text("Review skipped files before continuing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Menu {
+                ForEach(skippedItems) { item in
+                    Text(verbatim: "\(item.displayName): ")
+                        + Text(LocalizedStringKey(item.reason.title))
+                }
+            } label: {
+                Label("Details", systemImage: "list.bullet")
+            }
+            .menuStyle(.button)
+            .fixedSize()
+
+            Button(action: dismissAction) {
+                Label("Dismiss", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.yellow.opacity(0.12))
+        .overlay(alignment: .bottom) {
+            Divider()
         }
     }
 }
@@ -294,20 +315,6 @@ private struct ImportedItem: Identifiable, Hashable {
 
     var systemImage: String {
         "music.note"
-    }
-}
-
-private extension URL {
-    var isDirectory: Bool {
-        (try? resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-    }
-
-    var isRegularFile: Bool {
-        (try? resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
-    }
-
-    var isSupportedMP3: Bool {
-        pathExtension.localizedCaseInsensitiveCompare("mp3") == .orderedSame
     }
 }
 

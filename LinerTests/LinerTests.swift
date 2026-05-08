@@ -2,6 +2,17 @@ import XCTest
 @testable import Liner
 
 final class LinerTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDownWithError() throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        temporaryDirectories = []
+        try super.tearDownWithError()
+    }
+
     func testEditableMetadataStartsClean() {
         let metadata = TrackMetadata(
             title: "Song",
@@ -72,5 +83,64 @@ final class LinerTests: XCTestCase {
 
         XCTAssertEqual(state.current, state.original)
         XCTAssertFalse(state.hasChanges)
+    }
+
+    func testMP3ImportScannerDetectsOnlyMP3FilesInFolder() throws {
+        let folderURL = try makeTemporaryDirectory()
+        let nestedFolderURL = folderURL.appendingPathComponent("Album")
+        try FileManager.default.createDirectory(at: nestedFolderURL, withIntermediateDirectories: true)
+        let firstMP3URL = folderURL.appendingPathComponent("01 Intro.mp3")
+        let secondMP3URL = nestedFolderURL.appendingPathComponent("02 Song.MP3")
+        let textURL = folderURL.appendingPathComponent("notes.txt")
+        try Data().write(to: firstMP3URL)
+        try Data().write(to: secondMP3URL)
+        try Data().write(to: textURL)
+
+        let result = MP3ImportScanner().scan(urls: [folderURL])
+
+        XCTAssertEqual(
+            result.acceptedURLs,
+            [firstMP3URL, secondMP3URL].map(\.standardizedFileURL)
+        )
+        XCTAssertEqual(
+            result.skippedItems,
+            [
+                MP3ImportSkippedItem(
+                    url: textURL.standardizedFileURL,
+                    reason: .unsupportedFile
+                )
+            ]
+        )
+    }
+
+    func testMP3ImportScannerReportsDuplicatesAndUnsupportedFiles() throws {
+        let folderURL = try makeTemporaryDirectory()
+        let mp3URL = folderURL.appendingPathComponent("song.mp3")
+        let aacURL = folderURL.appendingPathComponent("song.m4a")
+        try Data().write(to: mp3URL)
+        try Data().write(to: aacURL)
+
+        let result = MP3ImportScanner().scan(
+            urls: [mp3URL, mp3URL, aacURL],
+            existingURLs: [mp3URL.standardizedFileURL]
+        )
+
+        XCTAssertTrue(result.acceptedURLs.isEmpty)
+        XCTAssertEqual(
+            result.skippedItems,
+            [
+                MP3ImportSkippedItem(url: mp3URL.standardizedFileURL, reason: .duplicate),
+                MP3ImportSkippedItem(url: mp3URL.standardizedFileURL, reason: .duplicate),
+                MP3ImportSkippedItem(url: aacURL.standardizedFileURL, reason: .unsupportedFile)
+            ]
+        )
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        temporaryDirectories.append(directoryURL)
+        return directoryURL
     }
 }

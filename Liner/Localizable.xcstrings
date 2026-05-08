@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld files skipped" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld files skipped"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件のファイルをスキップしました"
+          }
+        }
+      }
+    },
     "%lld MP3 files loaded" : {
 
     },
@@ -17,6 +33,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "プレースホルダーのトラック %lld 件"
+          }
+        }
+      }
+    },
+    "%lld skipped" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld skipped"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件をスキップ"
           }
         }
       }
@@ -71,6 +104,72 @@
         }
       }
     },
+    "Could Not Read" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could Not Read"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込めません"
+          }
+        }
+      }
+    },
+    "Details" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "詳細"
+          }
+        }
+      }
+    },
+    "Dismiss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        }
+      }
+    },
+    "Duplicate" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重複"
+          }
+        }
+      }
+    },
     "File" : {
       "localizations" : {
         "en" : {
@@ -86,6 +185,9 @@
           }
         }
       }
+    },
+    "Filter files" : {
+
     },
     "Filter tracks" : {
       "extractionState" : "stale",
@@ -104,9 +206,6 @@
         }
       }
     },
-    "Filter files" : {
-
-    },
     "Folders" : {
       "localizations" : {
         "en" : {
@@ -122,6 +221,9 @@
           }
         }
       }
+    },
+    "Folders are expanded to supported MP3 files." : {
+
     },
     "Inspector" : {
       "localizations" : {
@@ -223,7 +325,10 @@
         }
       }
     },
-    "Folders are expanded to supported MP3 files." : {
+    "Open MP3 Files or Folders" : {
+
+    },
+    "Open MP3 files or folders, or drag them here from Finder." : {
 
     },
     "Path" : {
@@ -261,6 +366,22 @@
         }
       }
     },
+    "Review skipped files before continuing." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review skipped files before continuing."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続行する前にスキップされたファイルを確認してください。"
+          }
+        }
+      }
+    },
     "Save Tags" : {
       "localizations" : {
         "en" : {
@@ -276,12 +397,6 @@
           }
         }
       }
-    },
-    "Open MP3 Files or Folders" : {
-
-    },
-    "Open MP3 files or folders, or drag them here from Finder." : {
-
     },
     "Select a loaded URL to inspect its details." : {
 
@@ -366,6 +481,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未読み込み"
+          }
+        }
+      }
+    },
+    "Unsupported File" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported File"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非対応ファイル"
           }
         }
       }
