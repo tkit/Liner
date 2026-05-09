@@ -71,7 +71,6 @@
       }
     },
     "Album" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -87,8 +86,10 @@
         }
       }
     },
+    "Album Artist" : {
+
+    },
     "Artist" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -103,6 +104,12 @@
           }
         }
       }
+    },
+    "Artwork" : {
+
+    },
+    "Comment" : {
+
     },
     "Could Not Read" : {
       "extractionState" : "stale",
@@ -136,6 +143,9 @@
           }
         }
       }
+    },
+    "Disc" : {
+
     },
     "Dismiss" : {
       "localizations" : {
@@ -225,6 +235,9 @@
     "Folders are expanded to supported MP3 files." : {
 
     },
+    "Genre" : {
+
+    },
     "Inspector" : {
       "localizations" : {
         "en" : {
@@ -272,6 +285,9 @@
           }
         }
       }
+    },
+    "Missing Tags" : {
+
     },
     "No Files Loaded" : {
 
@@ -349,6 +365,9 @@
           }
         }
       }
+    },
+    "Read Error" : {
+
     },
     "Review Changes" : {
       "localizations" : {
@@ -435,7 +454,6 @@
       }
     },
     "Title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -452,7 +470,6 @@
       }
     },
     "Track" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -503,6 +520,9 @@
       }
     },
     "URL" : {
+
+    },
+    "Year" : {
 
     }
   },

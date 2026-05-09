@@ -8,6 +8,6 @@ struct LinerApp: App {
         }
         .defaultSize(width: 1120, height: 720)
         .windowResizability(.contentMinSize)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unifiedCompact)
     }
 }

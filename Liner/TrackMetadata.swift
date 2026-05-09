@@ -2,7 +2,24 @@ import Foundation
 
 protocol AudioTagStore {
     func loadMetadata(from url: URL) throws -> TrackMetadata
+    func loadMetadataReport(from url: URL) -> TrackMetadataLoadReport
     func writeMetadata(_ metadata: TrackMetadata, to url: URL) throws
+}
+
+extension AudioTagStore {
+    func loadMetadataReport(from url: URL) -> TrackMetadataLoadReport {
+        do {
+            let metadata = try loadMetadata(from: url)
+            return TrackMetadataLoadReport(metadata: metadata)
+        } catch let error as TrackMetadataReadError {
+            return TrackMetadataLoadReport(metadata: TrackMetadata(), error: error)
+        } catch {
+            return TrackMetadataLoadReport(
+                metadata: TrackMetadata(),
+                error: .unreadableFile(error.localizedDescription)
+            )
+        }
+    }
 }
 
 struct TrackMetadata: Equatable, Hashable, Sendable {
@@ -39,6 +56,46 @@ struct TrackMetadata: Equatable, Hashable, Sendable {
         self.year = year
         self.comment = comment
         self.artwork = artwork
+    }
+}
+
+struct TrackMetadataLoadReport: Equatable, Sendable {
+    var metadata: TrackMetadata
+    var missingFields: Set<TrackMetadataField>
+    var error: TrackMetadataReadError?
+
+    init(
+        metadata: TrackMetadata,
+        missingFields: Set<TrackMetadataField>? = nil,
+        error: TrackMetadataReadError? = nil
+    ) {
+        self.metadata = metadata
+        self.missingFields = missingFields ?? metadata.missingEditableFields
+        self.error = error
+    }
+
+    var hasWarnings: Bool {
+        error != nil || !missingFields.isEmpty
+    }
+}
+
+enum TrackMetadataReadError: Error, Equatable, Sendable {
+    case missingID3v2Tag
+    case unsupportedID3v2Version(Int)
+    case invalidTag(String)
+    case unreadableFile(String)
+
+    var message: String {
+        switch self {
+        case .missingID3v2Tag:
+            "No ID3v2 tag was found."
+        case .unsupportedID3v2Version(let version):
+            "ID3v2.\(version) is not supported yet."
+        case .invalidTag(let detail):
+            "The ID3v2 tag could not be parsed: \(detail)"
+        case .unreadableFile(let detail):
+            "The file could not be read: \(detail)"
+        }
     }
 }
 
@@ -132,6 +189,31 @@ enum TrackMetadataField: String, CaseIterable, Identifiable, Sendable {
     case artwork
 
     var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .title:
+            "Title"
+        case .artist:
+            "Artist"
+        case .album:
+            "Album"
+        case .albumArtist:
+            "Album Artist"
+        case .track:
+            "Track"
+        case .disc:
+            "Disc"
+        case .genre:
+            "Genre"
+        case .year:
+            "Year"
+        case .comment:
+            "Comment"
+        case .artwork:
+            "Artwork"
+        }
+    }
 }
 
 enum TrackMetadataFieldValue: Equatable, Hashable, Sendable, CustomStringConvertible {
@@ -181,6 +263,10 @@ extension TrackMetadata {
         case .artwork:
             artwork.map(TrackMetadataFieldValue.artwork) ?? .empty
         }
+    }
+
+    var missingEditableFields: Set<TrackMetadataField> {
+        Set(TrackMetadataField.allCases.filter { value(for: $0) == .empty })
     }
 
     mutating func setValue(_ value: TrackMetadataFieldValue, for field: TrackMetadataField) {
