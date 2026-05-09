@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    private let tagStore = ID3v2AudioTagStore()
+
     @State private var selectedSidebarItem: SidebarItem? = .library
     @State private var importedItems: [ImportedItem] = []
     @State private var selectedItemID: ImportedItem.ID?
@@ -25,7 +27,7 @@ struct ContentView: View {
                 InspectorPlaceholder(item: selectedItem)
             }
         }
-        .navigationTitle("Liner")
+        .navigationTitle("")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Filter files")
         .toolbar {
             ToolbarItemGroup {
@@ -75,7 +77,7 @@ struct ContentView: View {
             addImportedURLs(urls)
             return !urls.isEmpty
         }
-        .frame(minWidth: 920, minHeight: 560)
+        .frame(minWidth: 700, minHeight: 360)
     }
 
     private var filteredItems: [ImportedItem] {
@@ -106,7 +108,9 @@ struct ContentView: View {
             urls: urls,
             existingURLs: Set(importedItems.map(\.url))
         )
-        let newItems = scanResult.acceptedURLs.map { ImportedItem(url: $0) }
+        let newItems = scanResult.acceptedURLs.map { url in
+            ImportedItem(url: url, metadataLoadReport: loadMetadataReport(from: url))
+        }
 
         lastImportSkippedItems = scanResult.skippedItems
 
@@ -114,6 +118,17 @@ struct ContentView: View {
 
         importedItems.append(contentsOf: newItems)
         selectedItemID = newItems.last?.id
+    }
+
+    private func loadMetadataReport(from url: URL) -> TrackMetadataLoadReport {
+        let canAccessScopedResource = url.startAccessingSecurityScopedResource()
+        defer {
+            if canAccessScopedResource {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return tagStore.loadMetadataReport(from: url)
     }
 }
 
@@ -126,7 +141,7 @@ private struct SidebarView: View {
                 .tag(item)
         }
         .navigationTitle("Liner")
-        .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+        .navigationSplitViewColumnWidth(min: 150, ideal: 210, max: 260)
     }
 }
 
@@ -164,8 +179,8 @@ private struct ImportedItemTable: View {
                     }
 
                     TableColumn("Status") { item in
-                        Label(item.statusTitle, systemImage: "checkmark.circle")
-                            .foregroundStyle(.secondary)
+                        Label(item.statusTitle, systemImage: item.statusSystemImage)
+                            .foregroundStyle(item.statusStyle)
                     }
                 }
                 .tableStyle(.bordered(alternatesRowBackgrounds: true))
@@ -228,8 +243,11 @@ private struct ImportedItemFooter: View {
     var body: some View {
         HStack {
             Label("\(itemCount) MP3 files loaded", systemImage: "music.note.list")
+                .lineLimit(1)
             Spacer()
             Text("Folders are expanded to supported MP3 files.")
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .font(.callout)
         .foregroundStyle(.secondary)
@@ -243,29 +261,46 @@ private struct InspectorPlaceholder: View {
     let item: ImportedItem?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Label("Inspector", systemImage: "sidebar.trailing")
-                .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Label("Inspector", systemImage: "sidebar.trailing")
+                    .font(.headline)
 
-            Divider()
+                Divider()
 
-            if let item {
-                InspectorField(label: "File", value: item.displayName)
-                InspectorField(label: "Status", value: item.statusTitle)
-                InspectorField(label: "URL", value: item.url.absoluteString)
-                InspectorField(label: "Path", value: item.url.path)
-            } else {
-                ContentUnavailableView(
-                    "No Selection",
-                    systemImage: "doc",
-                    description: Text("Select a loaded URL to inspect its details.")
-                )
+                if let item {
+                    InspectorField(label: "File", value: item.displayName)
+                    InspectorField(label: "Status", value: item.statusTitle)
+                    if let errorMessage = item.metadataLoadReport.error?.message {
+                        InspectorField(label: "Read Error", value: errorMessage)
+                    }
+                    if !item.metadataLoadReport.missingFields.isEmpty {
+                        InspectorField(label: "Missing Tags", value: item.missingFieldsSummary)
+                    }
+                    InspectorField(label: "Title", value: item.metadataState.current.title ?? "")
+                    InspectorField(label: "Artist", value: item.metadataState.current.artist ?? "")
+                    InspectorField(label: "Album", value: item.metadataState.current.album ?? "")
+                    InspectorField(label: "Album Artist", value: item.metadataState.current.albumArtist ?? "")
+                    InspectorField(label: "Track", value: item.metadataState.current.track?.description ?? "")
+                    InspectorField(label: "Disc", value: item.metadataState.current.disc?.description ?? "")
+                    InspectorField(label: "Genre", value: item.metadataState.current.genre ?? "")
+                    InspectorField(label: "Year", value: item.metadataState.current.year.map(String.init) ?? "")
+                    InspectorField(label: "Comment", value: item.metadataState.current.comment ?? "")
+                    InspectorField(label: "Artwork", value: item.metadataState.current.artwork?.description ?? "")
+                    InspectorField(label: "URL", value: item.url.absoluteString)
+                    InspectorField(label: "Path", value: item.url.path)
+                } else {
+                    ContentUnavailableView(
+                        "No Selection",
+                        systemImage: "doc",
+                        description: Text("Select a loaded URL to inspect its details.")
+                    )
+                }
             }
-
-            Spacer()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
-        .frame(minWidth: 240, idealWidth: 280, maxWidth: 340)
+        .frame(minWidth: 200, idealWidth: 260, maxWidth: 320)
     }
 }
 
@@ -288,6 +323,7 @@ private struct InspectorField: View {
 
 private struct ImportedItem: Identifiable, Hashable {
     let url: URL
+    var metadataLoadReport: TrackMetadataLoadReport
     var metadataState: EditableTrackMetadata
 
     var id: URL { url }
@@ -300,13 +336,53 @@ private struct ImportedItem: Identifiable, Hashable {
         hasher.combine(url)
     }
 
-    init(url: URL, metadataState: EditableTrackMetadata = EditableTrackMetadata(original: TrackMetadata())) {
+    init(url: URL, metadataLoadReport: TrackMetadataLoadReport = TrackMetadataLoadReport(metadata: TrackMetadata())) {
         self.url = url
-        self.metadataState = metadataState
+        self.metadataLoadReport = metadataLoadReport
+        self.metadataState = EditableTrackMetadata(original: metadataLoadReport.metadata)
     }
 
     var statusTitle: String {
-        metadataState.hasChanges ? "Modified" : "Loaded"
+        if metadataLoadReport.error != nil {
+            return "Read Error"
+        }
+
+        if !metadataLoadReport.missingFields.isEmpty {
+            return "Missing Tags"
+        }
+
+        return metadataState.hasChanges ? "Modified" : "Loaded"
+    }
+
+    var statusSystemImage: String {
+        if metadataLoadReport.error != nil {
+            return "exclamationmark.triangle"
+        }
+
+        if !metadataLoadReport.missingFields.isEmpty {
+            return "info.circle"
+        }
+
+        return metadataState.hasChanges ? "pencil.circle" : "checkmark.circle"
+    }
+
+    var statusStyle: AnyShapeStyle {
+        if metadataLoadReport.error != nil {
+            return AnyShapeStyle(.red)
+        }
+
+        if !metadataLoadReport.missingFields.isEmpty {
+            return AnyShapeStyle(.yellow)
+        }
+
+        return AnyShapeStyle(.secondary)
+    }
+
+    var missingFieldsSummary: String {
+        metadataLoadReport.missingFields
+            .sorted { $0.rawValue < $1.rawValue }
+            .map(\.title)
+            .joined(separator: ", ")
     }
 
     var displayName: String {
