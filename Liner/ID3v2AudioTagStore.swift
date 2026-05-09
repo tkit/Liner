@@ -152,7 +152,11 @@ private struct ID3v2MetadataParser {
         guard let frameData, let encoding = frameData.first, frameData.count > 4 else { return nil }
         let payload = frameData.dropFirst(4)
         let textStart = textTerminatorEnd(in: payload, encoding: encoding) ?? payload.startIndex
-        return decodeText(payload[textStart...], encoding: encoding)
+        return decodeText(
+            payload[textStart...],
+            encoding: encoding,
+            fallbackUTF16Encoding: utf16Encoding(from: payload[..<textStart])
+        )
     }
 
     private func userTextValue(named name: String, from frameData: Data?) -> String? {
@@ -165,7 +169,11 @@ private struct ID3v2MetadataParser {
             return nil
         }
 
-        return decodeText(payload[valueStart...], encoding: encoding)
+        return decodeText(
+            payload[valueStart...],
+            encoding: encoding,
+            fallbackUTF16Encoding: utf16Encoding(from: payload[..<valueStart])
+        )
     }
 
     private func artworkValue(from frameData: Data?) -> ArtworkMetadata? {
@@ -196,7 +204,11 @@ private struct ID3v2MetadataParser {
         )
     }
 
-    private func decodeText(_ bytes: Data.SubSequence, encoding: UInt8) -> String? {
+    private func decodeText(
+        _ bytes: Data.SubSequence,
+        encoding: UInt8,
+        fallbackUTF16Encoding: String.Encoding? = nil
+    ) -> String? {
         let data = Data(bytes)
         let decoded: String?
 
@@ -205,6 +217,7 @@ private struct ID3v2MetadataParser {
             decoded = String(data: data, encoding: .isoLatin1)
         case 1:
             decoded = String(data: data, encoding: .utf16)
+                ?? fallbackUTF16Encoding.flatMap { String(data: data, encoding: $0) }
                 ?? String(data: data, encoding: .utf16LittleEndian)
         case 2:
             decoded = String(data: data, encoding: .utf16BigEndian)
@@ -217,6 +230,22 @@ private struct ID3v2MetadataParser {
         return decoded?
             .trimmingCharacters(in: CharacterSet(charactersIn: "\0").union(.whitespacesAndNewlines))
             .nilIfEmpty
+    }
+
+    private func utf16Encoding(from bytes: Data.SubSequence) -> String.Encoding? {
+        guard bytes.count >= 2 else { return nil }
+
+        let first = bytes[bytes.startIndex]
+        let second = bytes[bytes.index(after: bytes.startIndex)]
+
+        switch (first, second) {
+        case (0xFE, 0xFF):
+            return .utf16BigEndian
+        case (0xFF, 0xFE):
+            return .utf16LittleEndian
+        default:
+            return nil
+        }
     }
 
     private func textTerminatorEnd(in bytes: Data.SubSequence, encoding: UInt8) -> Data.Index? {
@@ -235,7 +264,7 @@ private struct ID3v2MetadataParser {
                 return bytes.index(cursor, offsetBy: 2)
             }
 
-            cursor = bytes.index(after: cursor)
+            cursor = bytes.index(cursor, offsetBy: terminatorLength, limitedBy: bytes.endIndex) ?? bytes.endIndex
         }
 
         return nil
