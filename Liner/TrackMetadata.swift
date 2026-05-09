@@ -109,6 +109,33 @@ struct NumberedMetadata: Equatable, Hashable, Sendable {
         self.number = number
         self.total = total
     }
+
+    init?(editedString: String) {
+        let parts = editedString.split(separator: "/", omittingEmptySubsequences: false)
+
+        switch parts.count {
+        case 1:
+            guard let number = Int(parts[0].trimmingCharacters(in: .whitespaces)) else { return nil }
+            self.init(number: number)
+        case 2:
+            let numberString = parts[0].trimmingCharacters(in: .whitespaces)
+            let totalString = parts[1].trimmingCharacters(in: .whitespaces)
+            let number = numberString.isEmpty ? nil : Int(numberString)
+            let total = totalString.isEmpty ? nil : Int(totalString)
+
+            guard
+                (numberString.isEmpty || number != nil),
+                (totalString.isEmpty || total != nil),
+                number != nil || total != nil
+            else {
+                return nil
+            }
+
+            self.init(number: number, total: total)
+        default:
+            return nil
+        }
+    }
 }
 
 struct ArtworkMetadata: Equatable, Hashable, Sendable {
@@ -214,6 +241,22 @@ enum TrackMetadataField: String, CaseIterable, Identifiable, Sendable {
             "Comment"
         case .artwork:
             "Artwork"
+        }
+    }
+
+    func editedValue(from string: String) -> TrackMetadataFieldValue {
+        let trimmedString = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedString.isEmpty else { return .empty }
+
+        switch self {
+        case .title, .artist, .album, .albumArtist, .genre, .comment:
+            return .text(trimmedString)
+        case .track, .disc:
+            return NumberedMetadata(editedString: trimmedString).map(TrackMetadataFieldValue.indexed) ?? .empty
+        case .year:
+            return Int(trimmedString).map(TrackMetadataFieldValue.number) ?? .empty
+        case .artwork:
+            return .empty
         }
     }
 }
