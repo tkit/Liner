@@ -132,7 +132,7 @@ final class LinerTests: XCTestCase {
         XCTAssertEqual(report.missingFields, [.artwork])
     }
 
-    func testID3v2AudioTagStoreReportsReadErrorsWithoutThrowingFromReport() throws {
+    func testID3v2AudioTagStoreTreatsMissingID3v2TagAsEditableEmptyMetadata() throws {
         let folderURL = try makeTemporaryDirectory()
         let fileURL = folderURL.appendingPathComponent("empty.mp3")
         try Data().write(to: fileURL)
@@ -140,7 +140,7 @@ final class LinerTests: XCTestCase {
         let report = ID3v2AudioTagStore().loadMetadataReport(from: fileURL)
 
         XCTAssertEqual(report.metadata, TrackMetadata())
-        XCTAssertEqual(report.error, .missingID3v2Tag)
+        XCTAssertNil(report.error)
         XCTAssertEqual(report.missingFields, Set(TrackMetadataField.allCases))
     }
 

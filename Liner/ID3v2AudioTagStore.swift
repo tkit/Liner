@@ -17,6 +17,8 @@ struct ID3v2AudioTagStore: AudioTagStore {
         do {
             let metadata = try loadMetadata(from: url)
             return TrackMetadataLoadReport(metadata: metadata)
+        } catch TrackMetadataReadError.missingID3v2Tag {
+            return TrackMetadataLoadReport(metadata: TrackMetadata())
         } catch let error as TrackMetadataReadError {
             return TrackMetadataLoadReport(metadata: TrackMetadata(), error: error)
         } catch {

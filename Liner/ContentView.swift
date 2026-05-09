@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 struct ContentView: View {
     private let tagStore = ID3v2AudioTagStore()
@@ -27,7 +28,7 @@ struct ContentView: View {
                 InspectorPlaceholder(item: selectedItem)
             }
         }
-        .navigationTitle("")
+        .navigationTitle(Text(verbatim: String()))
         .searchable(text: $searchText, placement: .toolbar, prompt: "Filter files")
         .toolbar {
             ToolbarItemGroup {
@@ -108,11 +109,19 @@ struct ContentView: View {
             urls: urls,
             existingURLs: Set(importedItems.map(\.url))
         )
-        let newItems = scanResult.acceptedURLs.map { url in
-            ImportedItem(url: url, metadataLoadReport: loadMetadataReport(from: url))
+        var newItems: [ImportedItem] = []
+        var metadataSkippedItems: [MP3ImportSkippedItem] = []
+
+        for url in scanResult.acceptedURLs {
+            let metadataLoadReport = loadMetadataReport(from: url)
+            if metadataLoadReport.error == nil {
+                newItems.append(ImportedItem(url: url, metadataLoadReport: metadataLoadReport))
+            } else {
+                metadataSkippedItems.append(MP3ImportSkippedItem(url: url, reason: .readError))
+            }
         }
 
-        lastImportSkippedItems = scanResult.skippedItems
+        lastImportSkippedItems = scanResult.skippedItems + metadataSkippedItems
 
         guard !newItems.isEmpty else { return }
 
@@ -173,20 +182,287 @@ private struct ImportedItemTable: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(items, selection: $selectedItemID) {
-                    TableColumn("File") { item in
-                        Label(item.displayName, systemImage: item.systemImage)
-                    }
-
-                    TableColumn("Status") { item in
-                        Label(item.statusTitle, systemImage: item.statusSystemImage)
-                            .foregroundStyle(item.statusStyle)
-                    }
-                }
-                .tableStyle(.bordered(alternatesRowBackgrounds: true))
+                MetadataSpreadsheetView(items: items, selectedItemID: $selectedItemID)
             }
 
             ImportedItemFooter(itemCount: items.count)
+        }
+    }
+}
+
+private struct MetadataSpreadsheetView: NSViewRepresentable {
+    let items: [ImportedItem]
+    @Binding var selectedItemID: ImportedItem.ID?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selectedItemID: $selectedItemID)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let tableView = NSTableView()
+        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.gridStyleMask = [.solidHorizontalGridLineMask, .solidVerticalGridLineMask]
+        tableView.headerView = NSTableHeaderView()
+        tableView.allowsColumnResizing = true
+        tableView.allowsColumnReordering = true
+        tableView.allowsMultipleSelection = false
+        tableView.rowHeight = 26
+        tableView.columnAutoresizingStyle = .sequentialColumnAutoresizingStyle
+        tableView.delegate = context.coordinator
+        tableView.dataSource = context.coordinator
+
+        for column in MetadataSpreadsheetColumn.allCases {
+            let tableColumn = NSTableColumn(identifier: column.identifier)
+            tableColumn.title = column.title
+            tableColumn.minWidth = column.minWidth
+            tableColumn.width = column.defaultWidth
+            tableColumn.resizingMask = .userResizingMask
+            tableView.addTableColumn(tableColumn)
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = tableView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let tableView = scrollView.documentView as? NSTableView else { return }
+        context.coordinator.items = items
+        context.coordinator.selectedItemID = $selectedItemID
+        tableView.reloadData()
+        context.coordinator.applySelection(to: tableView)
+    }
+
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var items: [ImportedItem] = []
+        var selectedItemID: Binding<ImportedItem.ID?>
+        private var isApplyingSelection = false
+
+        init(selectedItemID: Binding<ImportedItem.ID?>) {
+            self.selectedItemID = selectedItemID
+        }
+
+        func numberOfRows(in tableView: NSTableView) -> Int {
+            items.count
+        }
+
+        func tableView(
+            _ tableView: NSTableView,
+            viewFor tableColumn: NSTableColumn?,
+            row: Int
+        ) -> NSView? {
+            guard
+                row < items.count,
+                let identifier = tableColumn?.identifier,
+                let column = MetadataSpreadsheetColumn(identifier: identifier)
+            else {
+                return nil
+            }
+
+            let textField: NSTextField
+            if let reusedField = tableView.makeView(
+                withIdentifier: column.cellIdentifier,
+                owner: self
+            ) as? NSTextField {
+                textField = reusedField
+            } else {
+                textField = NSTextField(labelWithString: String())
+                textField.identifier = column.cellIdentifier
+                textField.lineBreakMode = .byTruncatingTail
+                textField.maximumNumberOfLines = 1
+                textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            }
+
+            textField.stringValue = column.value(for: items[row])
+            textField.textColor = column.textColor(for: items[row])
+            return textField
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard
+                !isApplyingSelection,
+                let tableView = notification.object as? NSTableView
+            else {
+                return
+            }
+
+            let selectedRow = tableView.selectedRow
+            selectedItemID.wrappedValue = selectedRow >= 0 && selectedRow < items.count
+                ? items[selectedRow].id
+                : nil
+        }
+
+        @MainActor
+        func applySelection(to tableView: NSTableView) {
+            isApplyingSelection = true
+            defer { isApplyingSelection = false }
+
+            guard
+                let selectedItemID = selectedItemID.wrappedValue,
+                let row = items.firstIndex(where: { $0.id == selectedItemID })
+            else {
+                tableView.deselectAll(nil)
+                return
+            }
+
+            let indexSet = IndexSet(integer: row)
+            if tableView.selectedRowIndexes != indexSet {
+                tableView.selectRowIndexes(indexSet, byExtendingSelection: false)
+                tableView.scrollRowToVisible(row)
+            }
+        }
+    }
+}
+
+private enum MetadataSpreadsheetColumn: String, CaseIterable {
+    case file
+    case status
+    case title
+    case artist
+    case album
+    case albumArtist
+    case track
+    case disc
+    case genre
+    case year
+    case comment
+    case artwork
+
+    init?(identifier: NSUserInterfaceItemIdentifier) {
+        self.init(rawValue: identifier.rawValue)
+    }
+
+    var identifier: NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier(rawValue)
+    }
+
+    var cellIdentifier: NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier("\(rawValue)-cell")
+    }
+
+    var title: String {
+        switch self {
+        case .file:
+            "File"
+        case .status:
+            "Status"
+        case .title:
+            TrackMetadataField.title.title
+        case .artist:
+            TrackMetadataField.artist.title
+        case .album:
+            TrackMetadataField.album.title
+        case .albumArtist:
+            TrackMetadataField.albumArtist.title
+        case .track:
+            TrackMetadataField.track.title
+        case .disc:
+            TrackMetadataField.disc.title
+        case .genre:
+            TrackMetadataField.genre.title
+        case .year:
+            TrackMetadataField.year.title
+        case .comment:
+            TrackMetadataField.comment.title
+        case .artwork:
+            TrackMetadataField.artwork.title
+        }
+    }
+
+    var metadataField: TrackMetadataField? {
+        switch self {
+        case .file, .status:
+            nil
+        case .title:
+            .title
+        case .artist:
+            .artist
+        case .album:
+            .album
+        case .albumArtist:
+            .albumArtist
+        case .track:
+            .track
+        case .disc:
+            .disc
+        case .genre:
+            .genre
+        case .year:
+            .year
+        case .comment:
+            .comment
+        case .artwork:
+            .artwork
+        }
+    }
+
+    var minWidth: CGFloat {
+        switch self {
+        case .file:
+            180
+        case .status:
+            110
+        case .track, .disc, .year:
+            70
+        case .comment:
+            180
+        case .artwork:
+            120
+        default:
+            120
+        }
+    }
+
+    var defaultWidth: CGFloat {
+        switch self {
+        case .file:
+            240
+        case .status:
+            120
+        case .track, .disc, .year:
+            80
+        case .comment:
+            240
+        case .artwork:
+            150
+        default:
+            150
+        }
+    }
+
+    func value(for item: ImportedItem) -> String {
+        switch self {
+        case .file:
+            return item.displayName
+        case .status:
+            return item.statusTitle
+        case .track:
+            return item.metadataState.current.track?.number.map(String.init) ?? ""
+        case .disc:
+            return item.metadataState.current.disc?.number.map(String.init) ?? ""
+        case .title, .artist, .album, .albumArtist, .genre, .year, .comment, .artwork:
+            guard let metadataField else { return "" }
+            return item.metadataState.current.value(for: metadataField).description
+        }
+    }
+
+    func textColor(for item: ImportedItem) -> NSColor {
+        switch self {
+        case .status:
+            if item.metadataLoadReport.error != nil {
+                return .systemRed
+            }
+
+            return item.metadataState.hasChanges ? .controlAccentColor : .secondaryLabelColor
+        default:
+            guard let metadataField else { return .labelColor }
+            return item.metadataLoadReport.missingFields.contains(metadataField)
+                ? .tertiaryLabelColor
+                : .labelColor
         }
     }
 }
@@ -347,10 +623,6 @@ private struct ImportedItem: Identifiable, Hashable {
             return "Read Error"
         }
 
-        if !metadataLoadReport.missingFields.isEmpty {
-            return "Missing Tags"
-        }
-
         return metadataState.hasChanges ? "Modified" : "Loaded"
     }
 
@@ -359,20 +631,12 @@ private struct ImportedItem: Identifiable, Hashable {
             return "exclamationmark.triangle"
         }
 
-        if !metadataLoadReport.missingFields.isEmpty {
-            return "info.circle"
-        }
-
         return metadataState.hasChanges ? "pencil.circle" : "checkmark.circle"
     }
 
     var statusStyle: AnyShapeStyle {
         if metadataLoadReport.error != nil {
             return AnyShapeStyle(.red)
-        }
-
-        if !metadataLoadReport.missingFields.isEmpty {
-            return AnyShapeStyle(.yellow)
         }
 
         return AnyShapeStyle(.secondary)
