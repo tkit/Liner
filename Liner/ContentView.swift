@@ -22,6 +22,10 @@ struct ContentView: View {
                 skippedItems: lastImportSkippedItems,
                 selectedItemID: $selectedItemID,
                 importAction: openFileImporter,
+                updateMetadataFieldAction: { itemID, field, value in
+                    updateMetadataField(itemID: itemID, field: field, value: value)
+                },
+                resetMetadataFieldAction: resetMetadataField,
                 dismissSkippedItemsAction: { lastImportSkippedItems = [] }
             )
             .inspector(isPresented: $isInspectorPresented) {
@@ -129,6 +133,23 @@ struct ContentView: View {
         selectedItemID = newItems.last?.id
     }
 
+    private func updateMetadataField(
+        itemID: ImportedItem.ID,
+        field: TrackMetadataField,
+        value: TrackMetadataFieldValue
+    ) {
+        guard let itemIndex = importedItems.firstIndex(where: { $0.id == itemID }) else { return }
+        let oldValue = importedItems[itemIndex].metadataState.current.value(for: field)
+        guard oldValue != value else { return }
+
+        importedItems[itemIndex].metadataState.update(field, to: value)
+    }
+
+    private func resetMetadataField(itemID: ImportedItem.ID, field: TrackMetadataField) {
+        guard let itemIndex = importedItems.firstIndex(where: { $0.id == itemID }) else { return }
+        importedItems[itemIndex].metadataState.reset(field)
+    }
+
     private func loadMetadataReport(from url: URL) -> TrackMetadataLoadReport {
         let canAccessScopedResource = url.startAccessingSecurityScopedResource()
         defer {
@@ -159,6 +180,8 @@ private struct ImportedItemTable: View {
     let skippedItems: [MP3ImportSkippedItem]
     @Binding var selectedItemID: ImportedItem.ID?
     let importAction: () -> Void
+    let updateMetadataFieldAction: (ImportedItem.ID, TrackMetadataField, TrackMetadataFieldValue) -> Void
+    let resetMetadataFieldAction: (ImportedItem.ID, TrackMetadataField) -> Void
     let dismissSkippedItemsAction: () -> Void
 
     var body: some View {
@@ -182,7 +205,12 @@ private struct ImportedItemTable: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                MetadataSpreadsheetView(items: items, selectedItemID: $selectedItemID)
+                MetadataSpreadsheetView(
+                    items: items,
+                    selectedItemID: $selectedItemID,
+                    updateMetadataFieldAction: updateMetadataFieldAction,
+                    resetMetadataFieldAction: resetMetadataFieldAction
+                )
             }
 
             ImportedItemFooter(itemCount: items.count)
@@ -193,23 +221,38 @@ private struct ImportedItemTable: View {
 private struct MetadataSpreadsheetView: NSViewRepresentable {
     let items: [ImportedItem]
     @Binding var selectedItemID: ImportedItem.ID?
+    let updateMetadataFieldAction: (ImportedItem.ID, TrackMetadataField, TrackMetadataFieldValue) -> Void
+    let resetMetadataFieldAction: (ImportedItem.ID, TrackMetadataField) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(selectedItemID: $selectedItemID)
+        Coordinator(
+            selectedItemID: $selectedItemID,
+            updateMetadataFieldAction: updateMetadataFieldAction,
+            resetMetadataFieldAction: resetMetadataFieldAction
+        )
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let tableView = NSTableView()
+        let tableView = MetadataTableView()
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.gridStyleMask = [.solidHorizontalGridLineMask, .solidVerticalGridLineMask]
         tableView.headerView = NSTableHeaderView()
         tableView.allowsColumnResizing = true
         tableView.allowsColumnReordering = true
         tableView.allowsMultipleSelection = false
+        tableView.selectionHighlightStyle = .none
         tableView.rowHeight = 26
         tableView.columnAutoresizingStyle = .sequentialColumnAutoresizingStyle
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
+        tableView.focusedCellChanged = { [weak coordinator = context.coordinator, weak tableView] row, column in
+            guard let tableView else { return }
+            coordinator?.focusCell(row: row, column: column, in: tableView)
+        }
+        tableView.editFocusedCell = { [weak coordinator = context.coordinator, weak tableView] in
+            guard let tableView else { return }
+            coordinator?.editFocusedCell(in: tableView)
+        }
 
         for column in MetadataSpreadsheetColumn.allCases {
             let tableColumn = NSTableColumn(identifier: column.identifier)
@@ -233,17 +276,28 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
         guard let tableView = scrollView.documentView as? NSTableView else { return }
         context.coordinator.items = items
         context.coordinator.selectedItemID = $selectedItemID
+        context.coordinator.updateMetadataFieldAction = updateMetadataFieldAction
+        context.coordinator.resetMetadataFieldAction = resetMetadataFieldAction
         tableView.reloadData()
         context.coordinator.applySelection(to: tableView)
     }
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
         var items: [ImportedItem] = []
         var selectedItemID: Binding<ImportedItem.ID?>
+        var updateMetadataFieldAction: (ImportedItem.ID, TrackMetadataField, TrackMetadataFieldValue) -> Void
+        var resetMetadataFieldAction: (ImportedItem.ID, TrackMetadataField) -> Void
+        private var focusedCell: MetadataCell?
         private var isApplyingSelection = false
 
-        init(selectedItemID: Binding<ImportedItem.ID?>) {
+        init(
+            selectedItemID: Binding<ImportedItem.ID?>,
+            updateMetadataFieldAction: @escaping (ImportedItem.ID, TrackMetadataField, TrackMetadataFieldValue) -> Void,
+            resetMetadataFieldAction: @escaping (ImportedItem.ID, TrackMetadataField) -> Void
+        ) {
             self.selectedItemID = selectedItemID
+            self.updateMetadataFieldAction = updateMetadataFieldAction
+            self.resetMetadataFieldAction = resetMetadataFieldAction
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -263,23 +317,91 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
                 return nil
             }
 
-            let textField: NSTextField
-            if let reusedField = tableView.makeView(
+            let cellView: MetadataCellView
+            if let reusedView = tableView.makeView(
                 withIdentifier: column.cellIdentifier,
                 owner: self
-            ) as? NSTextField {
-                textField = reusedField
+            ) as? MetadataCellView {
+                cellView = reusedView
             } else {
-                textField = NSTextField(labelWithString: String())
-                textField.identifier = column.cellIdentifier
-                textField.lineBreakMode = .byTruncatingTail
-                textField.maximumNumberOfLines = 1
-                textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+                cellView = MetadataCellView()
+                cellView.identifier = column.cellIdentifier
+                cellView.resetButton.target = self
+                cellView.resetButton.action = #selector(resetCell(_:))
             }
 
-            textField.stringValue = column.value(for: items[row])
-            textField.textColor = column.textColor(for: items[row])
-            return textField
+            let item = items[row]
+            let textField = cellView.textField
+            textField.itemID = item.id
+            textField.column = column
+            textField.row = row
+            textField.delegate = self
+            textField.isEditable = column.isEditable
+            textField.isSelectable = column.isEditable
+            let isFocused = focusedCell == MetadataCell(row: row, column: tableView.column(withIdentifier: column.identifier))
+            textField.stringValue = column.value(for: item)
+            textField.textColor = column.textColor(for: item)
+            cellView.configure(
+                itemID: item.id,
+                field: column.metadataField,
+                row: row,
+                isDirty: column.isDirty(for: item),
+                isFocused: isFocused,
+                backgroundColor: column.backgroundColor(for: item, isFocused: isFocused)
+            )
+            return cellView
+        }
+
+        @MainActor
+        @objc private func resetCell(_ sender: MetadataCellResetButton) {
+            guard
+                let itemID = sender.itemID,
+                let metadataField = sender.metadataField,
+                let row = sender.row,
+                let tableView = sender.enclosingScrollView?.documentView as? NSTableView
+            else {
+                return
+            }
+
+            if let itemIndex = items.firstIndex(where: { $0.id == itemID }) {
+                items[itemIndex].metadataState.reset(metadataField)
+            }
+
+            resetMetadataFieldAction(itemID, metadataField)
+            tableView.reloadData(
+                forRowIndexes: IndexSet(integer: row),
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard
+                let textField = notification.object as? MetadataCellTextField,
+                let itemID = textField.itemID,
+                let row = textField.row,
+                let metadataField = textField.column?.metadataField,
+                textField.column?.isEditable == true
+            else {
+                return
+            }
+
+            guard let tableView = textField.enclosingScrollView?.documentView as? NSTableView else { return }
+            let newValue = metadataField.editedValue(from: textField.stringValue)
+            if let itemIndex = items.firstIndex(where: { $0.id == itemID }) {
+                let oldValue = items[itemIndex].metadataState.current.value(for: metadataField)
+                if oldValue != newValue {
+                    items[itemIndex].metadataState.update(metadataField, to: newValue)
+                    updateMetadataFieldAction(itemID, metadataField, newValue)
+                }
+            } else {
+                updateMetadataFieldAction(itemID, metadataField, newValue)
+            }
+
+            tableView.window?.makeFirstResponder(tableView)
+            tableView.reloadData(
+                forRowIndexes: IndexSet(integer: row),
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
@@ -314,7 +436,219 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
                 tableView.selectRowIndexes(indexSet, byExtendingSelection: false)
                 tableView.scrollRowToVisible(row)
             }
+
+            if focusedCell == nil {
+                focusCell(row: row, column: firstEditableColumnIndex(in: tableView), in: tableView)
+            }
         }
+
+        @MainActor
+        func focusCell(row: Int, column: Int, in tableView: NSTableView) {
+            guard !items.isEmpty, tableView.numberOfColumns > 0 else { return }
+            let clampedRow = min(max(row, 0), items.count - 1)
+            let clampedColumn = min(max(column, 0), tableView.numberOfColumns - 1)
+            let oldCell = focusedCell
+            focusedCell = MetadataCell(row: clampedRow, column: clampedColumn)
+            selectedItemID.wrappedValue = items[clampedRow].id
+
+            if let tableView = tableView as? MetadataTableView {
+                tableView.focusedCell = focusedCell
+            }
+
+            var rowIndexes = IndexSet(integer: clampedRow)
+            if let oldRow = oldCell?.row {
+                rowIndexes.insert(oldRow)
+            }
+
+            tableView.selectRowIndexes(IndexSet(integer: clampedRow), byExtendingSelection: false)
+            tableView.scrollRowToVisible(clampedRow)
+            tableView.scrollColumnToVisible(clampedColumn)
+            tableView.reloadData(
+                forRowIndexes: rowIndexes,
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
+        }
+
+        @MainActor
+        func editFocusedCell(in tableView: NSTableView) {
+            guard
+                let focusedCell,
+                focusedCell.row >= 0,
+                focusedCell.row < items.count,
+                focusedCell.column >= 0,
+                focusedCell.column < tableView.numberOfColumns,
+                let column = MetadataSpreadsheetColumn(
+                    identifier: tableView.tableColumns[focusedCell.column].identifier
+                ),
+                column.isEditable
+            else {
+                return
+            }
+
+            if let cellView = tableView.view(
+                atColumn: focusedCell.column,
+                row: focusedCell.row,
+                makeIfNecessary: true
+            ) as? MetadataCellView {
+                tableView.window?.makeFirstResponder(cellView.textField)
+                cellView.textField.selectText(nil)
+            } else {
+                tableView.editColumn(focusedCell.column, row: focusedCell.row, with: nil, select: true)
+            }
+        }
+
+        @MainActor
+        private func firstEditableColumnIndex(in tableView: NSTableView) -> Int {
+            tableView.tableColumns.firstIndex { tableColumn in
+                MetadataSpreadsheetColumn(identifier: tableColumn.identifier)?.isEditable == true
+            } ?? 0
+        }
+    }
+}
+
+private struct MetadataCell: Equatable {
+    var row: Int
+    var column: Int
+}
+
+private final class MetadataCellTextField: NSTextField {
+    var itemID: ImportedItem.ID?
+    var column: MetadataSpreadsheetColumn?
+    var row: Int?
+}
+
+private final class MetadataCellResetButton: NSButton {
+    var itemID: ImportedItem.ID?
+    var metadataField: TrackMetadataField?
+    var row: Int?
+}
+
+private final class MetadataCellView: NSView {
+    let textField = MetadataCellTextField(string: String())
+    let resetButton = MetadataCellResetButton()
+    private var resetButtonWidthConstraint: NSLayoutConstraint?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setUpView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setUpView()
+    }
+
+    func configure(
+        itemID: ImportedItem.ID,
+        field: TrackMetadataField?,
+        row: Int,
+        isDirty: Bool,
+        isFocused: Bool,
+        backgroundColor: NSColor
+    ) {
+        wantsLayer = true
+        layer?.cornerRadius = 4
+        layer?.borderWidth = isFocused ? 2 : 0
+        layer?.borderColor = isFocused ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
+        layer?.backgroundColor = (isFocused || isDirty) ? backgroundColor.cgColor : NSColor.clear.cgColor
+
+        resetButton.itemID = itemID
+        resetButton.metadataField = field
+        resetButton.row = row
+        resetButton.isHidden = !isDirty || field == nil
+        resetButton.isEnabled = isDirty && field != nil
+        resetButtonWidthConstraint?.constant = isDirty && field != nil ? 18 : 0
+        resetButton.toolTip = field.map { "Reset \($0.title) to loaded metadata" }
+    }
+
+    private func setUpView() {
+        wantsLayer = true
+
+        textField.lineBreakMode = .byTruncatingTail
+        textField.maximumNumberOfLines = 1
+        textField.isBordered = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.translatesAutoresizingMaskIntoConstraints = false
+
+        resetButton.title = ""
+        resetButton.bezelStyle = .inline
+        resetButton.isBordered = false
+        resetButton.image = NSImage(
+            systemSymbolName: "xmark.circle.fill",
+            accessibilityDescription: "Reset Cell"
+        )
+        resetButton.imagePosition = .imageOnly
+        resetButton.contentTintColor = .secondaryLabelColor
+        resetButton.setButtonType(.momentaryChange)
+        resetButton.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(textField)
+        addSubview(resetButton)
+
+        let resetButtonWidthConstraint = resetButton.widthAnchor.constraint(equalToConstant: 18)
+        self.resetButtonWidthConstraint = resetButtonWidthConstraint
+
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            textField.trailingAnchor.constraint(equalTo: resetButton.leadingAnchor, constant: -4),
+            resetButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            resetButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            resetButtonWidthConstraint,
+            resetButton.heightAnchor.constraint(equalToConstant: 18)
+        ])
+    }
+}
+
+private final class MetadataTableView: NSTableView {
+    var focusedCell: MetadataCell?
+    var focusedCellChanged: ((Int, Int) -> Void)?
+    var editFocusedCell: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifierFlags.isDisjoint(with: [.command, .option, .control]) else {
+            super.keyDown(with: event)
+            return
+        }
+
+        let currentRow = focusedCell?.row ?? (selectedRow >= 0 ? selectedRow : 0)
+        let currentColumn = focusedCell?.column ?? firstEditableColumnIndex
+
+        switch event.keyCode {
+        case 36, 76:
+            editFocusedCell?()
+        case 123:
+            focusedCellChanged?(currentRow, currentColumn - 1)
+        case 124:
+            focusedCellChanged?(currentRow, currentColumn + 1)
+        case 125:
+            focusedCellChanged?(currentRow + 1, currentColumn)
+        case 126:
+            focusedCellChanged?(currentRow - 1, currentColumn)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let clickedRow = row(at: location)
+        let clickedColumn = column(at: location)
+
+        if clickedRow >= 0, clickedColumn >= 0 {
+            focusedCellChanged?(clickedRow, clickedColumn)
+        }
+
+        super.mouseDown(with: event)
+    }
+
+    private var firstEditableColumnIndex: Int {
+        tableColumns.firstIndex { tableColumn in
+            MetadataSpreadsheetColumn(identifier: tableColumn.identifier)?.isEditable == true
+        } ?? 0
     }
 }
 
@@ -400,6 +734,15 @@ private enum MetadataSpreadsheetColumn: String, CaseIterable {
         }
     }
 
+    var isEditable: Bool {
+        switch self {
+        case .file, .status, .artwork:
+            false
+        default:
+            true
+        }
+    }
+
     var minWidth: CGFloat {
         switch self {
         case .file:
@@ -460,10 +803,29 @@ private enum MetadataSpreadsheetColumn: String, CaseIterable {
             return item.metadataState.hasChanges ? .controlAccentColor : .secondaryLabelColor
         default:
             guard let metadataField else { return .labelColor }
+            if item.metadataState.dirtyFields.contains(metadataField) {
+                return .controlAccentColor
+            }
+
             return item.metadataLoadReport.missingFields.contains(metadataField)
                 ? .tertiaryLabelColor
                 : .labelColor
         }
+    }
+
+    func isDirty(for item: ImportedItem) -> Bool {
+        guard let metadataField else { return false }
+        return item.metadataState.dirtyFields.contains(metadataField)
+    }
+
+    func backgroundColor(for item: ImportedItem, isFocused: Bool = false) -> NSColor {
+        if isFocused {
+            return NSColor.controlAccentColor.withAlphaComponent(0.16)
+        }
+
+        return isDirty(for: item)
+            ? NSColor.controlAccentColor.withAlphaComponent(0.12)
+            : .clear
     }
 }
 

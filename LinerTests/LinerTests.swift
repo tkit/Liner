@@ -85,6 +85,21 @@ final class LinerTests: XCTestCase {
         XCTAssertFalse(state.hasChanges)
     }
 
+    func testTrackMetadataFieldParsesEditedCellValues() {
+        XCTAssertEqual(TrackMetadataField.title.editedValue(from: " Edited Title "), .text("Edited Title"))
+        XCTAssertEqual(TrackMetadataField.comment.editedValue(from: ""), .empty)
+        XCTAssertEqual(TrackMetadataField.year.editedValue(from: "2026"), .number(2026))
+        XCTAssertEqual(TrackMetadataField.year.editedValue(from: "not a year"), .empty)
+        XCTAssertEqual(
+            TrackMetadataField.track.editedValue(from: "2/12"),
+            .indexed(NumberedMetadata(number: 2, total: 12))
+        )
+        XCTAssertEqual(
+            TrackMetadataField.disc.editedValue(from: "/2"),
+            .indexed(NumberedMetadata(number: nil, total: 2))
+        )
+    }
+
     func testID3v2AudioTagStoreLoadsBasicFixtureMetadata() throws {
         let metadata = try ID3v2AudioTagStore().loadMetadata(from: fixtureURL(named: "liner-id3v23-basic.mp3"))
 
