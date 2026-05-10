@@ -100,6 +100,97 @@ final class LinerTests: XCTestCase {
         )
     }
 
+    func testSpreadsheetClipboardParsesTSVRows() {
+        XCTAssertEqual(
+            SpreadsheetClipboard.rows(from: "Title\tArtist\nSecond\tOther Artist\n"),
+            [
+                ["Title", "Artist"],
+                ["Second", "Other Artist"]
+            ]
+        )
+    }
+
+    func testSpreadsheetClipboardPreservesEmptyCells() {
+        XCTAssertEqual(
+            SpreadsheetClipboard.rows(from: "Title\t\tAlbum\n\tArtist\t"),
+            [
+                ["Title", "", "Album"],
+                ["", "Artist", ""]
+            ]
+        )
+    }
+
+    func testSpreadsheetClipboardCreatesTSVFromRows() {
+        XCTAssertEqual(
+            SpreadsheetClipboard.tsv(from: [
+                ["Track 01.mp3", "Track 02.mp3"],
+                ["Loaded", "Modified"]
+            ]),
+            "Track 01.mp3\tTrack 02.mp3\nLoaded\tModified"
+        )
+    }
+
+    func testMetadataCellRangeReturnsRectangularCellsInRowMajorOrder() {
+        let range = MetadataCellRange(
+            anchor: MetadataCell(row: 3, column: 4),
+            focused: MetadataCell(row: 1, column: 2)
+        )
+
+        XCTAssertEqual(range.topLeft, MetadataCell(row: 1, column: 2))
+        XCTAssertEqual(range.bottomRight, MetadataCell(row: 3, column: 4))
+        XCTAssertTrue(range.contains(MetadataCell(row: 2, column: 3)))
+        XCTAssertFalse(range.contains(MetadataCell(row: 4, column: 3)))
+        XCTAssertEqual(
+            range.cells,
+            [
+                MetadataCell(row: 1, column: 2),
+                MetadataCell(row: 1, column: 3),
+                MetadataCell(row: 1, column: 4),
+                MetadataCell(row: 2, column: 2),
+                MetadataCell(row: 2, column: 3),
+                MetadataCell(row: 2, column: 4),
+                MetadataCell(row: 3, column: 2),
+                MetadataCell(row: 3, column: 3),
+                MetadataCell(row: 3, column: 4)
+            ]
+        )
+    }
+
+    func testSpreadsheetClipboardExpandsSingleValueAcrossSelectedRange() {
+        let selectedRange = MetadataCellRange(
+            anchor: MetadataCell(row: 0, column: 2),
+            focused: MetadataCell(row: 2, column: 2)
+        )
+
+        XCTAssertEqual(
+            SpreadsheetClipboard.pasteTargets(
+                for: [["Album Name"]],
+                startCell: MetadataCell(row: 0, column: 2),
+                selectedRange: selectedRange
+            ),
+            [
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 0, column: 2), value: "Album Name"),
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 1, column: 2), value: "Album Name"),
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 2, column: 2), value: "Album Name")
+            ]
+        )
+    }
+
+    func testSpreadsheetClipboardExpandsCopiedColumnFromSingleStartCell() {
+        XCTAssertEqual(
+            SpreadsheetClipboard.pasteTargets(
+                for: [["01 Intro.mp3"], ["02 Main.mp3"], ["03 Outro.mp3"]],
+                startCell: MetadataCell(row: 4, column: 2),
+                selectedRange: nil
+            ),
+            [
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 4, column: 2), value: "01 Intro.mp3"),
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 5, column: 2), value: "02 Main.mp3"),
+                SpreadsheetPasteTarget(cell: MetadataCell(row: 6, column: 2), value: "03 Outro.mp3")
+            ]
+        )
+    }
+
     func testID3v2AudioTagStoreLoadsBasicFixtureMetadata() throws {
         let metadata = try ID3v2AudioTagStore().loadMetadata(from: fixtureURL(named: "liner-id3v23-basic.mp3"))
 

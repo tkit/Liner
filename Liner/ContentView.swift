@@ -245,13 +245,21 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
         tableView.columnAutoresizingStyle = .sequentialColumnAutoresizingStyle
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
-        tableView.focusedCellChanged = { [weak coordinator = context.coordinator, weak tableView] row, column in
+        tableView.cellSelectionChanged = { [weak coordinator = context.coordinator, weak tableView] row, column, extendsSelection in
             guard let tableView else { return }
-            coordinator?.focusCell(row: row, column: column, in: tableView)
+            coordinator?.selectCell(row: row, column: column, extendsSelection: extendsSelection, in: tableView)
         }
         tableView.editFocusedCell = { [weak coordinator = context.coordinator, weak tableView] in
             guard let tableView else { return }
             coordinator?.editFocusedCell(in: tableView)
+        }
+        tableView.copyFocusedCell = { [weak coordinator = context.coordinator, weak tableView] in
+            guard let tableView else { return nil }
+            return coordinator?.copySelection(in: tableView)
+        }
+        tableView.pasteRows = { [weak coordinator = context.coordinator, weak tableView] rows in
+            guard let tableView else { return false }
+            return coordinator?.paste(rows: rows, in: tableView) ?? false
         }
 
         for column in MetadataSpreadsheetColumn.allCases {
@@ -288,6 +296,9 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
         var updateMetadataFieldAction: (ImportedItem.ID, TrackMetadataField, TrackMetadataFieldValue) -> Void
         var resetMetadataFieldAction: (ImportedItem.ID, TrackMetadataField) -> Void
         private var focusedCell: MetadataCell?
+        private var selectedCellRange: MetadataCellRange?
+        private var copiedCellRange: MetadataCellRange?
+        private var copyFeedbackWorkItem: DispatchWorkItem?
         private var isApplyingSelection = false
 
         init(
@@ -338,7 +349,12 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
             textField.delegate = self
             textField.isEditable = column.isEditable
             textField.isSelectable = column.isEditable
-            let isFocused = focusedCell == MetadataCell(row: row, column: tableView.column(withIdentifier: column.identifier))
+            let cell = MetadataCell(row: row, column: tableView.column(withIdentifier: column.identifier))
+            let visualState = MetadataCellVisualState(
+                isFocused: focusedCell == cell,
+                isSelected: selectedCellRange?.contains(cell) == true,
+                isCopied: copiedCellRange?.contains(cell) == true
+            )
             textField.stringValue = column.value(for: item)
             textField.textColor = column.textColor(for: item)
             cellView.configure(
@@ -346,8 +362,8 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
                 field: column.metadataField,
                 row: row,
                 isDirty: column.isDirty(for: item),
-                isFocused: isFocused,
-                backgroundColor: column.backgroundColor(for: item, isFocused: isFocused)
+                visualState: visualState,
+                dirtyBackgroundColor: column.backgroundColor(for: item)
             )
             return cellView
         }
@@ -438,17 +454,22 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
             }
 
             if focusedCell == nil {
-                focusCell(row: row, column: firstEditableColumnIndex(in: tableView), in: tableView)
+                selectCell(row: row, column: firstEditableColumnIndex(in: tableView), extendsSelection: false, in: tableView)
             }
         }
 
         @MainActor
-        func focusCell(row: Int, column: Int, in tableView: NSTableView) {
+        func selectCell(row: Int, column: Int, extendsSelection: Bool, in tableView: NSTableView) {
             guard !items.isEmpty, tableView.numberOfColumns > 0 else { return }
             let clampedRow = min(max(row, 0), items.count - 1)
             let clampedColumn = min(max(column, 0), tableView.numberOfColumns - 1)
             let oldCell = focusedCell
-            focusedCell = MetadataCell(row: clampedRow, column: clampedColumn)
+            let oldRange = selectedCellRange
+            let newCell = MetadataCell(row: clampedRow, column: clampedColumn)
+            focusedCell = newCell
+            selectedCellRange = extendsSelection
+                ? MetadataCellRange(anchor: selectedCellRange?.anchor ?? oldCell ?? newCell, focused: newCell)
+                : nil
             selectedItemID.wrappedValue = items[clampedRow].id
 
             if let tableView = tableView as? MetadataTableView {
@@ -458,6 +479,12 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
             var rowIndexes = IndexSet(integer: clampedRow)
             if let oldRow = oldCell?.row {
                 rowIndexes.insert(oldRow)
+            }
+            if let oldRange {
+                rowIndexes.formUnion(oldRange.rowIndexes)
+            }
+            if let selectedCellRange {
+                rowIndexes.formUnion(selectedCellRange.rowIndexes)
             }
 
             tableView.selectRowIndexes(IndexSet(integer: clampedRow), byExtendingSelection: false)
@@ -498,23 +525,220 @@ private struct MetadataSpreadsheetView: NSViewRepresentable {
         }
 
         @MainActor
+        func copySelection(in tableView: NSTableView) -> String? {
+            guard
+                let focusedCell,
+                focusedCell.row >= 0,
+                focusedCell.row < items.count,
+                focusedCell.column >= 0,
+                focusedCell.column < tableView.numberOfColumns
+            else {
+                return nil
+            }
+
+            let range = selectedCellRange ?? MetadataCellRange(anchor: focusedCell, focused: focusedCell)
+            let copiedText = SpreadsheetClipboard.tsv(from: range.rows.map { row in
+                row.compactMap { cell in
+                    guard
+                        cell.row >= 0,
+                        cell.row < items.count,
+                        cell.column >= 0,
+                        cell.column < tableView.numberOfColumns,
+                        let column = MetadataSpreadsheetColumn(
+                            identifier: tableView.tableColumns[cell.column].identifier
+                        )
+                    else {
+                        return nil
+                    }
+
+                    return column.value(for: items[cell.row])
+                }
+            })
+
+            showCopiedRange(range, in: tableView)
+            return copiedText
+        }
+
+        @MainActor
+        func paste(rows: [[String]], in tableView: NSTableView) -> Bool {
+            guard
+                !rows.isEmpty,
+                let startCell = pasteStartCell(in: tableView)
+            else {
+                return false
+            }
+
+            var reloadedRows = IndexSet()
+            var didUpdate = false
+            let targetRows = pasteTargetRows(rows, from: startCell)
+
+            for target in targetRows {
+                guard target.cell.row >= 0, target.cell.row < items.count else { continue }
+                guard target.cell.column >= 0, target.cell.column < tableView.numberOfColumns else { continue }
+                guard
+                    let column = MetadataSpreadsheetColumn(
+                        identifier: tableView.tableColumns[target.cell.column].identifier
+                    ),
+                    column.isEditable,
+                    let metadataField = column.metadataField
+                else {
+                    continue
+                }
+
+                let itemID = items[target.cell.row].id
+                let newValue = metadataField.editedValue(from: target.value)
+                let oldValue = items[target.cell.row].metadataState.current.value(for: metadataField)
+                guard oldValue != newValue else { continue }
+
+                items[target.cell.row].metadataState.update(metadataField, to: newValue)
+                updateMetadataFieldAction(itemID, metadataField, newValue)
+                reloadedRows.insert(target.cell.row)
+                didUpdate = true
+            }
+
+            guard didUpdate else { return false }
+
+            tableView.reloadData(
+                forRowIndexes: reloadedRows,
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
+            if selectedCellRange == nil {
+                selectCell(row: startCell.row, column: startCell.column, extendsSelection: false, in: tableView)
+            }
+            return true
+        }
+
+        @MainActor
         private func firstEditableColumnIndex(in tableView: NSTableView) -> Int {
             tableView.tableColumns.firstIndex { tableColumn in
                 MetadataSpreadsheetColumn(identifier: tableColumn.identifier)?.isEditable == true
             } ?? 0
         }
+
+        @MainActor
+        private func pasteStartCell(in tableView: NSTableView) -> MetadataCell? {
+            guard !items.isEmpty, tableView.numberOfColumns > 0 else { return nil }
+
+            let fallbackRow = tableView.selectedRow >= 0 ? tableView.selectedRow : 0
+            let proposedCell = focusedCell ?? MetadataCell(
+                row: fallbackRow,
+                column: firstEditableColumnIndex(in: tableView)
+            )
+            let originCell = selectedCellRange?.topLeft ?? proposedCell
+
+            let clampedRow = min(max(originCell.row, 0), items.count - 1)
+            let clampedColumn = min(max(originCell.column, 0), tableView.numberOfColumns - 1)
+
+            if let column = MetadataSpreadsheetColumn(identifier: tableView.tableColumns[clampedColumn].identifier),
+               column.isEditable {
+                return MetadataCell(row: clampedRow, column: clampedColumn)
+            }
+
+            return MetadataCell(row: clampedRow, column: firstEditableColumnIndex(in: tableView))
+        }
+
+        private func pasteTargetRows(_ rows: [[String]], from startCell: MetadataCell) -> [SpreadsheetPasteTarget] {
+            SpreadsheetClipboard.pasteTargets(
+                for: rows,
+                startCell: startCell,
+                selectedRange: selectedCellRange
+            )
+        }
+
+        @MainActor
+        private func showCopiedRange(_ range: MetadataCellRange, in tableView: NSTableView) {
+            copyFeedbackWorkItem?.cancel()
+            let oldRange = copiedCellRange
+            copiedCellRange = range
+
+            var rowIndexes = range.rowIndexes
+            if let oldRange {
+                rowIndexes.formUnion(oldRange.rowIndexes)
+            }
+            tableView.reloadData(
+                forRowIndexes: rowIndexes,
+                columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+            )
+
+            let workItem = DispatchWorkItem { [weak self, weak tableView] in
+                guard let self, let tableView else { return }
+                let expiredRange = self.copiedCellRange
+                self.copiedCellRange = nil
+                guard let expiredRange else { return }
+                tableView.reloadData(
+                    forRowIndexes: expiredRange.rowIndexes,
+                    columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns)
+                )
+            }
+            copyFeedbackWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: workItem)
+        }
     }
 }
 
-private struct MetadataCell: Equatable {
+struct MetadataCell: Equatable {
     var row: Int
     var column: Int
+}
+
+struct MetadataCellRange: Equatable {
+    var anchor: MetadataCell
+    var focused: MetadataCell
+
+    var topLeft: MetadataCell {
+        MetadataCell(row: min(anchor.row, focused.row), column: min(anchor.column, focused.column))
+    }
+
+    var bottomRight: MetadataCell {
+        MetadataCell(row: max(anchor.row, focused.row), column: max(anchor.column, focused.column))
+    }
+
+    var rowIndexes: IndexSet {
+        IndexSet(integersIn: topLeft.row...bottomRight.row)
+    }
+
+    var cells: [MetadataCell] {
+        rows.flatMap { $0 }
+    }
+
+    var rows: [[MetadataCell]] {
+        (topLeft.row...bottomRight.row).map { row in
+            (topLeft.column...bottomRight.column).map { column in
+                MetadataCell(row: row, column: column)
+            }
+        }
+    }
+
+    func contains(_ cell: MetadataCell) -> Bool {
+        topLeft.row...bottomRight.row ~= cell.row
+            && topLeft.column...bottomRight.column ~= cell.column
+    }
+}
+
+struct SpreadsheetPasteTarget: Equatable {
+    var cell: MetadataCell
+    var value: String
+}
+
+private struct MetadataCellVisualState {
+    var isFocused: Bool
+    var isSelected: Bool
+    var isCopied: Bool
 }
 
 private final class MetadataCellTextField: NSTextField {
     var itemID: ImportedItem.ID?
     var column: MetadataSpreadsheetColumn?
     var row: Int?
+
+    override func mouseDown(with event: NSEvent) {
+        if let tableView = enclosingScrollView?.documentView as? MetadataTableView,
+           tableView.handleCellMouseDown(with: event) {
+            return
+        }
+
+        super.mouseDown(with: event)
+    }
 }
 
 private final class MetadataCellResetButton: NSButton {
@@ -543,14 +767,24 @@ private final class MetadataCellView: NSView {
         field: TrackMetadataField?,
         row: Int,
         isDirty: Bool,
-        isFocused: Bool,
-        backgroundColor: NSColor
+        visualState: MetadataCellVisualState,
+        dirtyBackgroundColor: NSColor
     ) {
         wantsLayer = true
         layer?.cornerRadius = 4
-        layer?.borderWidth = isFocused ? 2 : 0
-        layer?.borderColor = isFocused ? NSColor.controlAccentColor.cgColor : NSColor.clear.cgColor
-        layer?.backgroundColor = (isFocused || isDirty) ? backgroundColor.cgColor : NSColor.clear.cgColor
+        layer?.borderWidth = visualState.isFocused || visualState.isCopied ? 2 : 0
+        layer?.borderColor = if visualState.isCopied {
+            NSColor.systemOrange.cgColor
+        } else if visualState.isFocused {
+            NSColor.controlAccentColor.cgColor
+        } else {
+            NSColor.clear.cgColor
+        }
+        layer?.backgroundColor = backgroundColor(
+            isDirty: isDirty,
+            visualState: visualState,
+            dirtyBackgroundColor: dirtyBackgroundColor
+        ).cgColor
 
         resetButton.itemID = itemID
         resetButton.metadataField = field
@@ -559,6 +793,26 @@ private final class MetadataCellView: NSView {
         resetButton.isEnabled = isDirty && field != nil
         resetButtonWidthConstraint?.constant = isDirty && field != nil ? 18 : 0
         resetButton.toolTip = field.map { "Reset \($0.title) to loaded metadata" }
+    }
+
+    private func backgroundColor(
+        isDirty: Bool,
+        visualState: MetadataCellVisualState,
+        dirtyBackgroundColor: NSColor
+    ) -> NSColor {
+        if visualState.isCopied {
+            return NSColor.systemOrange.withAlphaComponent(0.16)
+        }
+
+        if visualState.isFocused {
+            return NSColor.controlAccentColor.withAlphaComponent(0.16)
+        }
+
+        if visualState.isSelected {
+            return NSColor.controlAccentColor.withAlphaComponent(0.10)
+        }
+
+        return isDirty ? dirtyBackgroundColor : .clear
     }
 
     private func setUpView() {
@@ -604,8 +858,26 @@ private final class MetadataCellView: NSView {
 
 private final class MetadataTableView: NSTableView {
     var focusedCell: MetadataCell?
-    var focusedCellChanged: ((Int, Int) -> Void)?
+    var cellSelectionChanged: ((Int, Int, Bool) -> Void)?
     var editFocusedCell: (() -> Void)?
+    var copyFocusedCell: (() -> String?)?
+    var pasteRows: (([[String]]) -> Bool)?
+
+    @objc func copy(_ sender: Any?) {
+        guard let text = copyFocusedCell?() else { return }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc func paste(_ sender: Any?) {
+        guard
+            let text = NSPasteboard.general.string(forType: .string),
+            pasteRows?(SpreadsheetClipboard.rows(from: text)) == true
+        else {
+            return
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let modifierFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -616,39 +888,114 @@ private final class MetadataTableView: NSTableView {
 
         let currentRow = focusedCell?.row ?? (selectedRow >= 0 ? selectedRow : 0)
         let currentColumn = focusedCell?.column ?? firstEditableColumnIndex
+        let extendsSelection = modifierFlags.contains(.shift)
 
         switch event.keyCode {
         case 36, 76:
             editFocusedCell?()
         case 123:
-            focusedCellChanged?(currentRow, currentColumn - 1)
+            cellSelectionChanged?(currentRow, currentColumn - 1, extendsSelection)
         case 124:
-            focusedCellChanged?(currentRow, currentColumn + 1)
+            cellSelectionChanged?(currentRow, currentColumn + 1, extendsSelection)
         case 125:
-            focusedCellChanged?(currentRow + 1, currentColumn)
+            cellSelectionChanged?(currentRow + 1, currentColumn, extendsSelection)
         case 126:
-            focusedCellChanged?(currentRow - 1, currentColumn)
+            cellSelectionChanged?(currentRow - 1, currentColumn, extendsSelection)
         default:
             super.keyDown(with: event)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
+        if handleCellMouseDown(with: event) {
+            return
+        }
+
+        super.mouseDown(with: event)
+    }
+
+    func handleCellMouseDown(with event: NSEvent) -> Bool {
         let location = convert(event.locationInWindow, from: nil)
         let clickedRow = row(at: location)
         let clickedColumn = column(at: location)
 
-        if clickedRow >= 0, clickedColumn >= 0 {
-            focusedCellChanged?(clickedRow, clickedColumn)
+        guard clickedRow >= 0, clickedColumn >= 0 else {
+            return false
         }
 
-        super.mouseDown(with: event)
+        if hitTest(location) is MetadataCellResetButton {
+            return false
+        }
+
+        let extendsSelection = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.shift)
+        cellSelectionChanged?(clickedRow, clickedColumn, extendsSelection)
+        window?.makeFirstResponder(self)
+
+        if event.clickCount >= 2 {
+            editFocusedCell?()
+        }
+
+        return true
     }
 
     private var firstEditableColumnIndex: Int {
         tableColumns.firstIndex { tableColumn in
             MetadataSpreadsheetColumn(identifier: tableColumn.identifier)?.isEditable == true
         } ?? 0
+    }
+}
+
+struct SpreadsheetClipboard {
+    static func rows(from text: String) -> [[String]] {
+        let normalizedText = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        var rows = normalizedText
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { row in
+                row.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            }
+
+        if normalizedText.hasSuffix("\n"), rows.last == [""] {
+            rows.removeLast()
+        }
+
+        return rows
+    }
+
+    static func tsv(from rows: [[String]]) -> String {
+        rows.map { row in
+            row.joined(separator: "\t")
+        }
+        .joined(separator: "\n")
+    }
+
+    static func pasteTargets(
+        for rows: [[String]],
+        startCell: MetadataCell,
+        selectedRange: MetadataCellRange?
+    ) -> [SpreadsheetPasteTarget] {
+        guard let firstRow = rows.first else { return [] }
+        let isSingleValue = rows.count == 1 && firstRow.count == 1
+
+        if isSingleValue, let selectedRange {
+            return selectedRange.cells.map { cell in
+                SpreadsheetPasteTarget(cell: cell, value: firstRow[0])
+            }
+        }
+
+        return rows.enumerated().flatMap { rowOffset, pastedRow in
+            pastedRow.enumerated().map { columnOffset, pastedValue in
+                SpreadsheetPasteTarget(
+                    cell: MetadataCell(
+                        row: startCell.row + rowOffset,
+                        column: startCell.column + columnOffset
+                    ),
+                    value: pastedValue
+                )
+            }
+        }
     }
 }
 
